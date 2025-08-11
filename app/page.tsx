@@ -1,32 +1,68 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { User, MessageSquare, FileText, Search, BookOpen, Clock, Send, Upload, X, History, LogOut } from 'lucide-react';
 import { auth, db } from '@/lib/firebase';
-import { signInWithPopup, GoogleAuthProvider, User } from 'firebase/auth';
+import { signInWithPopup, GoogleAuthProvider, signOut, User as FirebaseUser } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
-import { calculateTokenCost, INITIAL_TOKENS } from '@/lib/tokens';
+import { TabConfig, Industry, HistoryItem, GenerateResponse } from '@/types';
 
-export default function Home() {
-  const [user, setUser] = useState<User | null>(null);
-  const [text, setText] = useState('');
-  const [industry, setIndustry] = useState('general');
-  const [generatedMinutes, setGeneratedMinutes] = useState('');
-  const [loading, setLoading] = useState(false);
+const INITIAL_TOKENS = 100;
+
+export default function AIToolsHub() {
+  const [user, setUser] = useState<FirebaseUser | null>(null);
   const [tokenBalance, setTokenBalance] = useState(0);
+  const [activeTab, setActiveTab] = useState<'minutes' | 'summary' | 'research' | 'chat'>('minutes');
+  const [input, setInput] = useState('');
+  const [industry, setIndustry] = useState<Industry>('general');
+  const [isLoading, setIsLoading] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [result, setResult] = useState<string>('');
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Googleログイン
+  // Firebase Auth の監視
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      if (user) {
+        setUser(user);
+        await loadUserData(user.uid);
+      } else {
+        setUser(null);
+        setTokenBalance(0);
+        setHistory([]);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const loadUserData = async (uid: string) => {
+    try {
+      const userRef = doc(db, 'users', uid);
+      const userDoc = await getDoc(userRef);
+      
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        setTokenBalance(userData.tokenBalance || 0);
+        // 履歴も読み込む（実装時）
+      }
+    } catch (error) {
+      console.error('ユーザーデータの読み込みエラー:', error);
+    }
+  };
+
   const handleLogin = async () => {
     try {
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
       
-      // ユーザー情報を確認・作成
       const userRef = doc(db, 'users', user.uid);
       const userDoc = await getDoc(userRef);
       
       if (!userDoc.exists()) {
-        // 新規ユーザー
         await setDoc(userRef, {
           uid: user.uid,
           email: user.email,
@@ -35,165 +71,463 @@ export default function Home() {
           createdAt: new Date()
         });
         setTokenBalance(INITIAL_TOKENS);
-      } else {
-        const userData = userDoc.data();
-        setTokenBalance(userData.tokenBalance);
       }
-      
-      setUser(user);
     } catch (error) {
       console.error('ログインエラー:', error);
       alert('ログインに失敗しました');
     }
   };
 
-  // ファイルアップロード
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const result = e.target?.result;
-      if (typeof result === 'string') {
-        setText(result);
-      }
-    };
-    reader.readAsText(file);
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error('ログアウトエラー:', error);
+    }
   };
 
-  // 議事録生成
-  const handleGenerate = async () => {
-    if (!user || !text) {
-      alert('ログインしてテキストを入力してください');
-      return;
+  const tabs: TabConfig[] = [
+    { 
+      id: 'minutes', 
+      name: '議事録作成', 
+      description: '音声や文字起こしから議事録を生成',
+      placeholder: '会議の文字起こしテキストをここに貼り付けてください...',
+      buttonText: '議事録を生成',
+      supportFiles: true
+    },
+    { 
+      id: 'summary', 
+      name: '要約作成', 
+      description: '長文書類を要約して整理',
+      placeholder: '要約したい文書の内容をここに貼り付けてください...',
+      buttonText: '要約を生成',
+      supportFiles: true
+    },
+    { 
+      id: 'research', 
+      name: 'リサーチャー', 
+      description: '情報収集と分析をサポート',
+      placeholder: '調査したいトピックや質問を入力してください...',
+      buttonText: 'リサーチを実行',
+      supportFiles: false
+    },
+    { 
+      id: 'chat', 
+      name: 'AIチャット', 
+      description: 'AIアシスタントとの対話',
+      placeholder: 'AIアシスタントに質問や相談をしてください...',
+      buttonText: '送信',
+      supportFiles: false
     }
+  ];
 
-    const cost = calculateTokenCost(text.length, industry);
+  const industries = [
+    { value: 'general' as const, label: '一般' },
+    { value: 'tech' as const, label: 'IT・テック' },
+    { value: 'finance' as const, label: '金融' },
+    { value: 'healthcare' as const, label: '医療・ヘルスケア' },
+    { value: 'education' as const, label: '教育' },
+    { value: 'retail' as const, label: '小売・EC' }
+  ];
+
+  const estimateTokens = (text: string): number => {
+    return Math.ceil(text.length / 10);
+  };
+
+  const handleSubmit = async () => {
+    if (!input.trim() || !user) return;
     
-    if (tokenBalance < cost) {
-      alert(`トークンが不足しています。必要: ${cost}、残高: ${tokenBalance}`);
+    const estimatedTokens = estimateTokens(input);
+    if (tokenBalance < estimatedTokens) {
+      alert(`トークンが不足しています。必要: ${estimatedTokens}、残高: ${tokenBalance}`);
       return;
     }
 
-    setLoading(true);
+    setIsLoading(true);
+    setResult('');
+    
     try {
-      // APIを呼び出し
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          text,
+          text: input,
           industry,
+          type: activeTab,
           userId: user.uid,
-          cost
+          isFileUpload: false
         }),
       });
 
-      const data = await response.json();
+      const data: GenerateResponse = await response.json();
       
-      if (data.error) {
-        throw new Error(data.error);
+      if (!response.ok) {
+        throw new Error(data.error || 'エラーが発生しました');
       }
 
-      setGeneratedMinutes(data.minutes);
-      setTokenBalance(data.remainingTokens);
+      setResult(data.result);
+      setHistory(prev => [data.historyItem, ...prev]);
+      setTokenBalance(prev => prev - data.tokensUsed);
+      setInput('');
       
       // ユーザーのトークン残高を更新
-      const userRef = doc(db, 'users', user.uid);
-      await updateDoc(userRef, {
-        tokenBalance: data.remainingTokens
-      });
+      if (user) {
+        const userRef = doc(db, 'users', user.uid);
+        await updateDoc(userRef, {
+          tokenBalance: tokenBalance - data.tokensUsed
+        });
+      }
 
     } catch (error) {
       console.error('生成エラー:', error);
-      alert('議事録の生成に失敗しました');
+      alert(error instanceof Error ? error.message : 'AI処理に失敗しました');
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
-  return (
-    <div className="min-h-screen p-8 max-w-4xl mx-auto">
-      <h1 className="text-3xl font-bold mb-8">議事録生成アプリ</h1>
-      
-      {!user ? (
-        <div className="text-center">
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result;
+      if (typeof result === 'string') {
+        setInput(result);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const currentTab = tabs.find(t => t.id === activeTab)!;
+
+  // ログインしていない場合
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
+        <div className="bg-white p-8 rounded-xl shadow-lg max-w-md w-full mx-4">
+          <div className="text-center mb-6">
+            <div className="p-3 bg-blue-600 rounded-lg inline-block mb-4">
+              <MessageSquare className="w-8 h-8 text-white" />
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">AI Tools Hub</h1>
+            <p className="text-gray-600">AIツールを使って作業効率を向上させましょう</p>
+          </div>
+          
           <button
             onClick={handleLogin}
-            className="bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600"
+            className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium"
           >
             Googleでログイン
           </button>
         </div>
-      ) : (
-        <div>
-          <div className="mb-4 text-right">
-            <span className="text-sm">ようこそ、{user.displayName}さん</span>
-            <br />
-            <span className="text-lg font-semibold">残高: {tokenBalance} ポイント</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-600 rounded-lg">
+                <MessageSquare className="w-6 h-6 text-white" />
+              </div>
+              <h1 className="text-xl font-semibold text-gray-900">AI Tools Hub</h1>
+            </div>
+            
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setShowHistory(!showHistory)}
+                className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <History className="w-4 h-4" />
+                履歴
+              </button>
+              
+              <div className="flex items-center gap-3 px-4 py-2 bg-gray-50 rounded-lg">
+                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                <span className="text-sm font-medium text-gray-700">{tokenBalance} ポイント</span>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
+                  <User className="w-4 h-4 text-white" />
+                </div>
+                <span className="text-sm font-medium text-gray-700">{user.displayName}</span>
+                <button
+                  onClick={handleLogout}
+                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                  title="ログアウト"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="flex gap-8">
+          {/* Sidebar */}
+          <div className="w-80 space-y-6">
+            {/* Tab Navigation */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="p-4 border-b border-gray-100">
+                <h3 className="font-semibold text-gray-900">AIツール</h3>
+              </div>
+              <nav className="p-2">
+                {tabs.map((tab) => {
+                  const Icon = tab.id === 'minutes' ? FileText : 
+                              tab.id === 'summary' ? BookOpen :
+                              tab.id === 'research' ? Search : MessageSquare;
+                  
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => {
+                        setActiveTab(tab.id);
+                        setInput('');
+                        setResult('');
+                      }}
+                      className={`w-full flex items-center gap-3 px-3 py-3 text-left rounded-lg transition-colors ${
+                        activeTab === tab.id
+                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                      }`}
+                    >
+                      <Icon className="w-5 h-5" />
+                      <div>
+                        <div className="font-medium">{tab.name}</div>
+                        <div className="text-xs text-gray-500">{tab.description}</div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
+
+            {/* Recent History */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+              <div className="p-4 border-b border-gray-100">
+                <h3 className="font-semibold text-gray-900">最近の履歴</h3>
+              </div>
+              <div className="p-2 space-y-1 max-h-64 overflow-y-auto">
+                {history.slice(0, 5).map((item) => (
+                  <div key={item.id} className="p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors">
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="w-1.5 h-1.5 bg-blue-500 rounded-full"></div>
+                      <span className="text-sm font-medium text-gray-900 truncate">{item.title}</span>
+                    </div>
+                    <p className="text-xs text-gray-500 truncate">{item.preview}</p>
+                    <p className="text-xs text-gray-400 mt-1">{item.date}</p>
+                  </div>
+                ))}
+                {history.length === 0 && (
+                  <div className="p-3 text-center text-gray-500">
+                    <Clock className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                    <p className="text-sm">履歴がありません</p>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
-          <div className="space-y-4">
-            {/* 業界選択 */}
-            <div>
-              <label className="block text-sm font-medium mb-2">業界選択</label>
-              <select
-                value={industry}
-                onChange={(e) => setIndustry(e.target.value)}
-                className="w-full p-2 border rounded"
-              >
-                <option value="general">一般</option>
-                <option value="construction">建築</option>
-                <option value="it">IT</option>
-                <option value="medical">医療</option>
-              </select>
+          {/* Main Content */}
+          <div className="flex-1 space-y-6">
+            {/* Input Area */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-2 bg-blue-50 rounded-lg">
+                  {currentTab.id === 'minutes' && <FileText className="w-5 h-5 text-blue-600" />}
+                  {currentTab.id === 'summary' && <BookOpen className="w-5 h-5 text-blue-600" />}
+                  {currentTab.id === 'research' && <Search className="w-5 h-5 text-blue-600" />}
+                  {currentTab.id === 'chat' && <MessageSquare className="w-5 h-5 text-blue-600" />}
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900">{currentTab.name}</h2>
+                  <p className="text-sm text-gray-600">{currentTab.description}</p>
+                </div>
+              </div>
+
+              {activeTab !== 'chat' && (
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    業界・分野を選択
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={industry}
+                      onChange={(e) => setIndustry(e.target.value as Industry)}
+                      className="w-full appearance-none bg-white px-4 py-3 pr-10 border border-gray-300 rounded-xl shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors hover:border-gray-400 text-gray-900"
+                    >
+                      {industries.map(ind => (
+                        <option key={ind.value} value={ind.value} className="text-gray-900">{ind.label}</option>
+                      ))}
+                    </select>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3">
+                      <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  内容を入力
+                </label>
+                
+                <div className="relative">
+                  <textarea
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder={currentTab.placeholder}
+                    className="w-full h-40 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none transition-colors hover:border-gray-400 text-gray-900 placeholder-gray-500"
+                    disabled={isLoading}
+                  />
+                  
+                  {currentTab.supportFiles && (
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="absolute top-3 right-3 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg transition-colors"
+                      title="ファイルをアップロード"
+                    >
+                      <Upload className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  onChange={handleFileUpload}
+                  accept=".txt,.docx,.pdf"
+                  className="hidden"
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-gray-600">
+                  推定消費: <span className="font-medium text-gray-900">{estimateTokens(input)} ポイント</span>
+                </div>
+                
+                <button
+                  onClick={handleSubmit}
+                  disabled={!input.trim() || isLoading}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium shadow-sm hover:shadow-md"
+                >
+                  {isLoading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      処理中...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      {currentTab.buttonText}
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
 
-            {/* テキスト入力 */}
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                文字起こしテキスト
-              </label>
-              <textarea
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                className="w-full h-40 p-2 border rounded"
-                placeholder="議事録にしたいテキストを入力..."
-              />
-            </div>
-
-            {/* ファイルアップロード */}
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                またはファイルをアップロード
-              </label>
-              <input
-                type="file"
-                accept=".txt"
-                onChange={handleFileUpload}
-                className="block w-full text-sm"
-              />
-            </div>
-
-            {/* 生成ボタン */}
-            <button
-              onClick={handleGenerate}
-              disabled={loading || !text}
-              className="w-full bg-green-500 text-white py-3 rounded-lg hover:bg-green-600 disabled:bg-gray-300"
-            >
-              {loading ? '生成中...' : `議事録を生成 (${calculateTokenCost(text.length, industry)} トークン)`}
-            </button>
-
-            {/* 生成結果 */}
-            {generatedMinutes && (
-              <div className="mt-8 p-4 bg-gray-100 rounded">
-                <h2 className="text-xl font-semibold mb-4">生成された議事録</h2>
-                <div className="whitespace-pre-wrap">{generatedMinutes}</div>
+            {/* Result Area */}
+            {result && (
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 bg-green-50 rounded-lg">
+                    <FileText className="w-5 h-5 text-green-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">生成結果</h3>
+                    <p className="text-sm text-gray-600">AIが生成した{currentTab.name}</p>
+                  </div>
+                </div>
+                
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <pre className="whitespace-pre-wrap text-sm text-gray-800 font-sans leading-relaxed">
+                    {result}
+                  </pre>
+                </div>
+                
+                <div className="flex items-center gap-2 mt-4">
+                  <button
+                    onClick={() => navigator.clipboard.writeText(result)}
+                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium"
+                  >
+                    コピー
+                  </button>
+                  <button
+                    onClick={() => {
+                      const blob = new Blob([result], { type: 'text/plain' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `${currentTab.name}_${new Date().toISOString().split('T')[0]}.txt`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    }}
+                    className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors text-sm font-medium"
+                  >
+                    ダウンロード
+                  </button>
+                </div>
               </div>
             )}
+          </div>
+        </div>
+      </div>
+
+      {/* History Modal */}
+      {showHistory && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[80vh] overflow-hidden mx-4">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900">作業履歴</h2>
+              <button
+                onClick={() => setShowHistory(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto max-h-[60vh]">
+              {history.length > 0 ? (
+                <div className="grid gap-4">
+                  {history.map((item) => (
+                    <div key={item.id} className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-medium text-gray-900">{item.title}</h3>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-gray-500">{item.tokensUsed}pt</span>
+                          <span className="text-sm text-gray-500">{item.date}</span>
+                        </div>
+                      </div>
+                      <p className="text-sm text-gray-600 mb-3">{item.preview}</p>
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
+                          {tabs.find(t => t.id === item.type)?.name}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <Clock className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">履歴がありません</h3>
+                  <p className="text-gray-600">AIツールを使用すると、ここに履歴が表示されます。</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

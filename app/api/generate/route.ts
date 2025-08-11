@@ -1,41 +1,60 @@
 // app/api/generate/route.ts
 import { NextResponse } from 'next/server';
-import { generateMinutes } from '@/lib/gemini';
+import { aiService } from '@/lib/ai-service';
+import { GenerateRequest } from '@/types';
 
 export async function POST(request: Request) {
   try {
-    const { text, industry, userId, cost } = await request.json();
+    const body: GenerateRequest & { userId: string } = await request.json();
 
     // 入力検証
-    if (!text || typeof text !== 'string' || text.trim().length === 0) {
+    if (!body.text || typeof body.text !== 'string' || body.text.trim().length === 0) {
       return NextResponse.json(
         { error: 'テキストが入力されていません' },
         { status: 400 }
       );
     }
 
-    if (!userId || typeof userId !== 'string') {
+    if (!body.userId || typeof body.userId !== 'string') {
       return NextResponse.json(
         { error: 'ユーザー認証が必要です' },
         { status: 401 }
       );
     }
 
-    // 議事録を生成
-    const minutes = await generateMinutes(text, industry);
+    if (!['minutes', 'summary', 'research', 'chat'].includes(body.type)) {
+      return NextResponse.json(
+        { error: '無効なリクエストタイプです' },
+        { status: 400 }
+      );
+    }
 
-    // 実際のアプリではここでFirestoreに保存処理を行う
-    // const minutesRef = await addDoc(collection(db, 'minutes'), {...});
-
-    return NextResponse.json({
-      minutes,
-      remainingTokens: 100 - cost // 仮の値（実際はDBから取得）
+    // AI処理を実行
+    const result = await aiService.generate({
+      text: body.text,
+      industry: body.industry,
+      type: body.type,
+      isFileUpload: body.isFileUpload,
+      sessionId: body.sessionId
     });
+
+    // 実際のアプリケーションでは、ここでFirestoreに保存
+    // const docRef = await addDoc(collection(db, body.type), {
+    //   userId: body.userId,
+    //   ...result,
+    //   createdAt: new Date()
+    // });
+
+    // ユーザーのトークン残高を更新
+    // await updateDoc(doc(db, 'users', body.userId), {
+    //   tokenBalance: increment(-result.tokensUsed)
+    // });
+
+    return NextResponse.json(result);
 
   } catch (error) {
     console.error('API Error:', error);
     
-    // エラーの種類に応じて適切なレスポンスを返す
     if (error instanceof Error) {
       if (error.message.includes('GEMINI_API_KEY')) {
         return NextResponse.json(
@@ -52,7 +71,7 @@ export async function POST(request: Request) {
     }
     
     return NextResponse.json(
-      { error: '議事録の生成に失敗しました' },
+      { error: 'AI処理中にエラーが発生しました' },
       { status: 500 }
     );
   }
