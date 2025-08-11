@@ -85,6 +85,10 @@ export interface GenerateResponse {
   historyItem: HistoryItem;
 }
 
+export interface ErrorResponse {
+  error: string;
+}
+
 export type Industry = 
   | 'general' 
   | 'tech' 

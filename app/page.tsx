@@ -5,7 +5,7 @@ import { User, MessageSquare, FileText, Search, BookOpen, Clock, Send, Upload, X
 import { auth, db } from '@/lib/firebase';
 import { signInWithPopup, GoogleAuthProvider, signOut, User as FirebaseUser } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
-import { TabConfig, Industry, HistoryItem, GenerateResponse } from '@/types';
+import { TabConfig, Industry, HistoryItem, GenerateResponse, ErrorResponse } from '@/types';
 
 const INITIAL_TOKENS = 100;
 
@@ -161,22 +161,25 @@ export default function AIToolsHub() {
         }),
       });
 
-      const data: GenerateResponse = await response.json();
+      const data = await response.json();
       
       if (!response.ok) {
-        throw new Error(data.error || 'エラーが発生しました');
+        const errorData = data as ErrorResponse;
+        throw new Error(errorData.error || 'エラーが発生しました');
       }
 
-      setResult(data.result);
-      setHistory(prev => [data.historyItem, ...prev]);
-      setTokenBalance(prev => prev - data.tokensUsed);
+      const successData = data as GenerateResponse;
+
+      setResult(successData.result);
+      setHistory(prev => [successData.historyItem, ...prev]);
+      setTokenBalance(prev => prev - successData.tokensUsed);
       setInput('');
       
       // ユーザーのトークン残高を更新
       if (user) {
         const userRef = doc(db, 'users', user.uid);
         await updateDoc(userRef, {
-          tokenBalance: tokenBalance - data.tokensUsed
+          tokenBalance: tokenBalance - successData.tokensUsed
         });
       }
 
