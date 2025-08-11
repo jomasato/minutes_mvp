@@ -4,9 +4,11 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 export async function generateMinutes(text: string, industry: string): Promise<string> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
-  
-  const prompt = `
+  try {
+    // 新しいモデル名を使用
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    
+    const prompt = `
 あなたは${industry}業界の専門的な議事録作成者です。
 以下の文字起こしテキストから、簡潔で分かりやすい議事録を作成してください。
 
@@ -18,9 +20,15 @@ export async function generateMinutes(text: string, industry: string): Promise<s
 
 文字起こしテキスト:
 ${text}
+
+上記のテキストを基に、分かりやすく整理された議事録を作成してください。
 `;
 
-  const result = await model.generateContent(prompt);
-  const response = await result.response;
-  return response.text();
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    return response.text();
+  } catch (error) {
+    console.error('Gemini API Error:', error);
+    throw new Error('議事録の生成中にエラーが発生しました');
+  }
 }

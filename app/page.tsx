@@ -2,12 +2,12 @@
 
 import { useState } from 'react';
 import { auth, db } from '@/lib/firebase';
-import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc, addDoc, collection } from 'firebase/firestore';
+import { signInWithPopup, GoogleAuthProvider, User } from 'firebase/auth';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { calculateTokenCost, INITIAL_TOKENS } from '@/lib/tokens';
 
 export default function Home() {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [text, setText] = useState('');
   const [industry, setIndustry] = useState('general');
   const [generatedMinutes, setGeneratedMinutes] = useState('');
@@ -36,7 +36,8 @@ export default function Home() {
         });
         setTokenBalance(INITIAL_TOKENS);
       } else {
-        setTokenBalance(userDoc.data().tokenBalance);
+        const userData = userDoc.data();
+        setTokenBalance(userData.tokenBalance);
       }
       
       setUser(user);
@@ -53,7 +54,10 @@ export default function Home() {
     
     const reader = new FileReader();
     reader.onload = (e) => {
-      setText(e.target?.result as string);
+      const result = e.target?.result;
+      if (typeof result === 'string') {
+        setText(result);
+      }
     };
     reader.readAsText(file);
   };
@@ -117,9 +121,6 @@ export default function Home() {
       
       {!user ? (
         <div className="text-center">
-          <div className="bg-red-500 text-white p-4 m-4">
-  Tailwindテスト：背景が赤で文字が白なら正常
-</div>
           <button
             onClick={handleLogin}
             className="bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600"
@@ -132,7 +133,7 @@ export default function Home() {
           <div className="mb-4 text-right">
             <span className="text-sm">ようこそ、{user.displayName}さん</span>
             <br />
-            <span className="text-lg font-semibold">残高: {tokenBalance} トークン</span>
+            <span className="text-lg font-semibold">残高: {tokenBalance} ポイント</span>
           </div>
 
           <div className="space-y-4">
