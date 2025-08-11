@@ -21,7 +21,7 @@ export class AIService {
       tech: 'IT・テクノロジー業界',
       finance: '金融業界',
       healthcare: '医療・ヘルスケア業界',
-      education: '教育業界',
+      education: '建築・設計業界',
       retail: '小売・EC業界'
     };
     return contexts[industry] || contexts.general;

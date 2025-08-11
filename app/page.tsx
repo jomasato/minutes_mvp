@@ -170,7 +170,7 @@ export default function AIToolsHub() {
     { value: 'tech' as const, label: 'IT・テック' },
     { value: 'finance' as const, label: '金融' },
     { value: 'healthcare' as const, label: '医療・ヘルスケア' },
-    { value: 'education' as const, label: '教育' },
+    { value: 'education' as const, label: '建築・設計' },
     { value: 'retail' as const, label: '小売・EC' }
   ];
 
