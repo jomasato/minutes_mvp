@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { User, MessageSquare, FileText, Search, BookOpen, Clock, Send, Upload, X, History, LogOut } from 'lucide-react';
 import { auth, db } from '@/lib/firebase';
-import { signInWithPopup, GoogleAuthProvider, signOut, User as FirebaseUser } from 'firebase/auth';
+import { signInWithPopup, GoogleAuthProvider, signOut, signInWithEmailAndPassword, User as FirebaseUser } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { TabConfig, Industry, HistoryItem, GenerateResponse, ErrorResponse } from '@/types';
 
@@ -19,6 +19,10 @@ export default function AIToolsHub() {
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [result, setResult] = useState<string>('');
+  const [showEmailLogin, setShowEmailLogin] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -53,7 +57,51 @@ export default function AIToolsHub() {
     }
   };
 
-  const handleLogin = async () => {
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) return;
+
+    setLoginLoading(true);
+    try {
+      const result = await signInWithEmailAndPassword(auth, email, password);
+      const user = result.user;
+      
+      const userRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userRef);
+      
+      if (!userDoc.exists()) {
+        await setDoc(userRef, {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.email?.split('@')[0] || 'ユーザー',
+          tokenBalance: INITIAL_TOKENS,
+          createdAt: new Date()
+        });
+        setTokenBalance(INITIAL_TOKENS);
+      }
+    } catch (error: any) {
+      console.error('メールログインエラー:', error);
+      let errorMessage = 'ログインに失敗しました';
+      
+      if (error.code === 'auth/user-not-found') {
+        errorMessage = 'ユーザーが見つかりません';
+      } else if (error.code === 'auth/wrong-password') {
+        errorMessage = 'パスワードが間違っています';
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = 'メールアドレスの形式が正しくありません';
+      }
+      
+      alert(errorMessage);
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+      
+  const handleGoogleLogin = async () => {
     try {
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
@@ -73,8 +121,8 @@ export default function AIToolsHub() {
         setTokenBalance(INITIAL_TOKENS);
       }
     } catch (error) {
-      console.error('ログインエラー:', error);
-      alert('ログインに失敗しました');
+      console.error('Googleログインエラー:', error);
+      alert('Googleログインに失敗しました');
     }
   };
 
@@ -212,7 +260,7 @@ export default function AIToolsHub() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
         <div className="bg-white p-8 rounded-xl shadow-lg max-w-md w-full mx-4">
-          <div className="text-center mb-6">
+          <div className="text-center mb-8">
             <div className="p-3 bg-blue-600 rounded-lg inline-block mb-4">
               <MessageSquare className="w-8 h-8 text-white" />
             </div>
@@ -220,12 +268,99 @@ export default function AIToolsHub() {
             <p className="text-gray-600">AIツールを使って作業効率を向上させましょう</p>
           </div>
           
+          {/* Google Login */}
           <button
-            onClick={handleLogin}
-            className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+            onClick={handleGoogleLogin}
+            className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium mb-4"
           >
             Googleでログイン
           </button>
+          
+          {/* Divider */}
+          <div className="relative mb-4">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-300" />
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-2 bg-white text-gray-500">または</span>
+            </div>
+          </div>
+          
+          {/* Email Login Toggle */}
+          {!showEmailLogin ? (
+            <button
+              onClick={() => setShowEmailLogin(true)}
+              className="w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+            >
+              メール・パスワードでログイン
+            </button>
+          ) : (
+            <div>
+              <form onSubmit={handleEmailLogin} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    メールアドレス
+                  </label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="test@example.com"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors text-gray-900"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    パスワード
+                  </label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors text-gray-900"
+                    required
+                  />
+                </div>
+                
+                <button
+                  type="submit"
+                  disabled={loginLoading}
+                  className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                >
+                  {loginLoading ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ログイン中...
+                    </div>
+                  ) : (
+                    'ログイン'
+                  )}
+                </button>
+              </form>
+              
+              <button
+                onClick={() => {
+                  setShowEmailLogin(false);
+                  setEmail('');
+                  setPassword('');
+                }}
+                className="w-full mt-3 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+              >
+                戻る
+              </button>
+              
+              <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+                <p className="text-sm text-blue-700 font-medium mb-1">テストアカウント</p>
+                <p className="text-xs text-blue-600">
+                  Email: test@example.com<br />
+                  Password: testpass123
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
