@@ -27,10 +27,10 @@ export class AIService {
     return contexts[industry] || contexts.general;
   }
 
-  private getPromptTemplate(type: string, industry: Industry, text: string): string {
+  private getPromptTemplate(type: 'minutes' | 'summary' | 'research' | 'chat', industry: Industry, text: string): string {
     const industryContext = this.getIndustryContext(industry);
 
-    const templates = {
+    const templates: Record<'minutes' | 'summary' | 'research' | 'chat', string> = {
       minutes: `
 あなたは${industryContext}の専門的な議事録作成者です。
 以下の文字起こしテキストから、簡潔で分かりやすい議事録を作成してください。
@@ -92,7 +92,7 @@ ${industryContext}の専門知識を活用し、実用的で有益な回答を�
 `
     };
 
-    return templates[type] || templates.chat;
+    return templates[type];
   }
 
   async generate(request: GenerateRequest): Promise<GenerateResponse> {
@@ -129,11 +129,11 @@ ${industryContext}の専門知識を活用し、実用的で有益な回答を�
     }
   }
 
-  private generateTitle(type: string, text: string): string {
+  private generateTitle(type: 'minutes' | 'summary' | 'research' | 'chat', text: string): string {
     const date = new Date().toLocaleDateString('ja-JP');
     const preview = text.substring(0, 20).replace(/\n/g, ' ');
     
-    const typeNames = {
+    const typeNames: Record<'minutes' | 'summary' | 'research' | 'chat', string> = {
       minutes: '議事録',
       summary: '要約',
       research: 'リサーチ',
