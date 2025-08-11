@@ -104,7 +104,8 @@ ${industryContext}の専門知識を活用し、実用的で有益な回答を�
       const generatedText = response.text();
 
       // トークン使用量を計算（簡易版）
-      const tokensUsed = Math.ceil((request.text.length + generatedText.length) / 4);
+      //const tokensUsed = Math.ceil((request.text.length + generatedText.length) / 4);
+      const tokensUsed = 10
 
       // 履歴アイテムを作成
       const historyItem = {
