@@ -63,8 +63,8 @@ export default function AIToolsHub() {
 
     setLoginLoading(true);
     try {
-      const result = await signInWithEmailAndPassword(auth, email, password);
-      const user = result.user;
+      const authResult = await signInWithEmailAndPassword(auth, email, password);
+      const user = authResult.user;
       
       const userRef = doc(db, 'users', user.uid);
       const userDoc = await getDoc(userRef);
@@ -96,16 +96,12 @@ export default function AIToolsHub() {
       setLoginLoading(false);
     }
   };
-    try {
-      const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-      
+
   const handleGoogleLogin = async () => {
     try {
       const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
+      const authResult = await signInWithPopup(auth, provider);
+      const user = authResult.user;
       
       const userRef = doc(db, 'users', user.uid);
       const userDoc = await getDoc(userRef);
@@ -245,9 +241,9 @@ export default function AIToolsHub() {
     
     const reader = new FileReader();
     reader.onload = (e) => {
-      const result = e.target?.result;
-      if (typeof result === 'string') {
-        setInput(result);
+      const fileResult = e.target?.result;
+      if (typeof fileResult === 'string') {
+        setInput(fileResult);
       }
     };
     reader.readAsText(file);
@@ -670,5 +666,3 @@ export default function AIToolsHub() {
         </div>
       )}
     </div>
-  );
-}
