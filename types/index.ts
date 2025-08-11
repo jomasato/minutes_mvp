@@ -72,7 +72,7 @@ export interface HistoryItem {
 
 export interface GenerateRequest {
   text: string;
-  industry: string;
+  industry: Industry;
   type: 'minutes' | 'summary' | 'research' | 'chat';
   isFileUpload?: boolean;
   sessionId?: string; // for chat
