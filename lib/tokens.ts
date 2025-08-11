@@ -25,17 +25,17 @@ export function calculateTokenCost(
   type: 'minutes' | 'summary' | 'research' | 'chat',
   industry: 'general' | 'tech' | 'finance' | 'healthcare' | 'education' | 'retail'
 ): number {
-  let cost = BASE_COSTS[type];
+  let baseCost: number = BASE_COSTS[type];
   
   // 文字数による追加コスト
-  if (textLength > 1000) cost += 5;
-  if (textLength > 5000) cost += 10;
-  if (textLength > 10000) cost += 15;
+  if (textLength > 1000) baseCost += 5;
+  if (textLength > 5000) baseCost += 10;
+  if (textLength > 10000) baseCost += 15;
   
   // 業界特化による乗数
-  cost = Math.ceil(cost * INDUSTRY_MULTIPLIERS[industry]);
+  const finalCost = Math.ceil(baseCost * INDUSTRY_MULTIPLIERS[industry]);
   
-  return cost;
+  return finalCost;
 }
 
 export function formatTokenBalance(balance: number): string {
