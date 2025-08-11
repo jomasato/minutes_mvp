@@ -665,4 +665,4 @@ export default function AIToolsHub() {
           </div>
         </div>
       )}
-    </div>
+    </div>)}
