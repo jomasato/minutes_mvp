@@ -1,103 +1,201 @@
-import Image from "next/image";
+'use client';
+
+import { useState } from 'react';
+import { auth, db } from '@/lib/firebase';
+import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { doc, getDoc, setDoc, updateDoc, addDoc, collection } from 'firebase/firestore';
+import { calculateTokenCost, INITIAL_TOKENS } from '@/lib/tokens';
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [user, setUser] = useState<any>(null);
+  const [text, setText] = useState('');
+  const [industry, setIndustry] = useState('general');
+  const [generatedMinutes, setGeneratedMinutes] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [tokenBalance, setTokenBalance] = useState(0);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+  // Googleログイン
+  const handleLogin = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+      
+      // ユーザー情報を確認・作成
+      const userRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userRef);
+      
+      if (!userDoc.exists()) {
+        // 新規ユーザー
+        await setDoc(userRef, {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          tokenBalance: INITIAL_TOKENS,
+          createdAt: new Date()
+        });
+        setTokenBalance(INITIAL_TOKENS);
+      } else {
+        setTokenBalance(userDoc.data().tokenBalance);
+      }
+      
+      setUser(user);
+    } catch (error) {
+      console.error('ログインエラー:', error);
+      alert('ログインに失敗しました');
+    }
+  };
+
+  // ファイルアップロード
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setText(e.target?.result as string);
+    };
+    reader.readAsText(file);
+  };
+
+  // 議事録生成
+  const handleGenerate = async () => {
+    if (!user || !text) {
+      alert('ログインしてテキストを入力してください');
+      return;
+    }
+
+    const cost = calculateTokenCost(text.length, industry);
+    
+    if (tokenBalance < cost) {
+      alert(`トークンが不足しています。必要: ${cost}、残高: ${tokenBalance}`);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // APIを呼び出し
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          text,
+          industry,
+          userId: user.uid,
+          cost
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      setGeneratedMinutes(data.minutes);
+      setTokenBalance(data.remainingTokens);
+      
+      // ユーザーのトークン残高を更新
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, {
+        tokenBalance: data.remainingTokens
+      });
+
+    } catch (error) {
+      console.error('生成エラー:', error);
+      alert('議事録の生成に失敗しました');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen p-8 max-w-4xl mx-auto">
+      <h1 className="text-3xl font-bold mb-8">議事録生成アプリ</h1>
+      
+      {!user ? (
+        <div className="text-center">
+          <div className="bg-red-500 text-white p-4 m-4">
+  Tailwindテスト：背景が赤で文字が白なら正常
+</div>
+          <button
+            onClick={handleLogin}
+            className="bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+            Googleでログイン
+          </button>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      ) : (
+        <div>
+          <div className="mb-4 text-right">
+            <span className="text-sm">ようこそ、{user.displayName}さん</span>
+            <br />
+            <span className="text-lg font-semibold">残高: {tokenBalance} トークン</span>
+          </div>
+
+          <div className="space-y-4">
+            {/* 業界選択 */}
+            <div>
+              <label className="block text-sm font-medium mb-2">業界選択</label>
+              <select
+                value={industry}
+                onChange={(e) => setIndustry(e.target.value)}
+                className="w-full p-2 border rounded"
+              >
+                <option value="general">一般</option>
+                <option value="construction">建築</option>
+                <option value="it">IT</option>
+                <option value="medical">医療</option>
+              </select>
+            </div>
+
+            {/* テキスト入力 */}
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                文字起こしテキスト
+              </label>
+              <textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                className="w-full h-40 p-2 border rounded"
+                placeholder="議事録にしたいテキストを入力..."
+              />
+            </div>
+
+            {/* ファイルアップロード */}
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                またはファイルをアップロード
+              </label>
+              <input
+                type="file"
+                accept=".txt"
+                onChange={handleFileUpload}
+                className="block w-full text-sm"
+              />
+            </div>
+
+            {/* 生成ボタン */}
+            <button
+              onClick={handleGenerate}
+              disabled={loading || !text}
+              className="w-full bg-green-500 text-white py-3 rounded-lg hover:bg-green-600 disabled:bg-gray-300"
+            >
+              {loading ? '生成中...' : `議事録を生成 (${calculateTokenCost(text.length, industry)} トークン)`}
+            </button>
+
+            {/* 生成結果 */}
+            {generatedMinutes && (
+              <div className="mt-8 p-4 bg-gray-100 rounded">
+                <h2 className="text-xl font-semibold mb-4">生成された議事録</h2>
+                <div className="whitespace-pre-wrap">{generatedMinutes}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
