@@ -79,16 +79,19 @@ export default function AIToolsHub() {
         });
         setTokenBalance(INITIAL_TOKENS);
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('メールログインエラー:', error);
       let errorMessage = 'ログインに失敗しました';
       
-      if (error.code === 'auth/user-not-found') {
-        errorMessage = 'ユーザーが見つかりません';
-      } else if (error.code === 'auth/wrong-password') {
-        errorMessage = 'パスワードが間違っています';
-      } else if (error.code === 'auth/invalid-email') {
-        errorMessage = 'メールアドレスの形式が正しくありません';
+      if (error && typeof error === 'object' && 'code' in error) {
+        const firebaseError = error as { code: string };
+        if (firebaseError.code === 'auth/user-not-found') {
+          errorMessage = 'ユーザーが見つかりません';
+        } else if (firebaseError.code === 'auth/wrong-password') {
+          errorMessage = 'パスワードが間違っています';
+        } else if (firebaseError.code === 'auth/invalid-email') {
+          errorMessage = 'メールアドレスの形式が正しくありません';
+        }
       }
       
       alert(errorMessage);
