@@ -114,6 +114,7 @@ ${industryContext}の専門知識を活用し、実用的で有益な回答を�
         title: this.generateTitle(request.type, request.text),
         preview: generatedText.substring(0, 100) + '...',
         date: new Date().toISOString().split('T')[0],
+        
         tokensUsed
       };
 

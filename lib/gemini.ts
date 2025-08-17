@@ -6,7 +6,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 export async function generateMinutes(text: string, industry: string): Promise<string> {
   try {
     // 新しいモデル名を使用
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
     
     const prompt = `
 あなたは${industry}業界の専門的な議事録作成者です。
