@@ -45,6 +45,7 @@ export class AIService {
 ${text}
 
 上記のテキストを基に、${industryContext}の専門用語も適切に使用し、分かりやすく整理された議事録を作成してください。
+なるだけ多くの情報を盛り込む議事メモも追加してください
 `,
 
       summary: `
